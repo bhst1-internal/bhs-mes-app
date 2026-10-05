@@ -1698,14 +1698,19 @@
 
         function processBagEntities(rows) {
             bagDataset.clear();
+
+            // DEBUGGING: Log the exact headers found in the Excel file to the browser console
+            if (rows.length > 0) {
+                console.log("Excel Headers Detected by Dashboard:", Object.keys(rows[0]));
+            }
+
             rows.forEach((rawRow, index) => {
                 const row = normalizeRowKeys(rawRow);
                 
                 const rawBagTag = getRawValue(row, ['BAGTAGID', 'BAGTAG', 'LICENSEPLATE']);
                 const bagTagId = (rawBagTag !== '-' && rawBagTag !== '') ? String(rawBagTag).trim() : `UNKNOWN_${index + 1}`;
 
-                // 1. Directly target EVENTTIME column for the Timestamp
-                const rawEventTime = getRawValue(row, ['EVENTTIME']);
+                const rawEventTime = getRawValue(row, ['EVENTTIME', 'EVENT_TIME']);
                 const rawDate = getRawValue(row, ['DATE', 'EVENTDATE']);
                 const rawTime = getRawValue(row, ['TIME']);
                 const rawStd  = getRawValue(row, ['STD', 'STDTIME', 'SCHEDULEDTIME']);
@@ -1722,6 +1727,20 @@
                 const parsedDt = parseCustomDateToJS(combinedEventTime);
                 const rawHourStd = String(getRawValue(row, ['HOURBEFORESTD', 'HOURSBEFORESTD'])).trim();
 
+                // 1. First try normal targeted matching
+                let mesVal = getRawValue(row, ['TDPIDCURRNAME', 'TDP', 'IDCURRNAME', 'MES']);
+                let originVal = getRawValue(row, ['TNONAME', 'TNO', 'TERMINALNODENAME', 'ORIGINPOINT']);
+
+                // 2. FUZZY MATCHING FALLBACK: If standard lookup fails, aggressively scan original headers
+                if (mesVal === '-' && rawRow) {
+                    const fallbackMesKey = Object.keys(rawRow).find(k => k.replace(/[^A-Z0-9]/gi, '').toUpperCase().includes('TDP'));
+                    if (fallbackMesKey) mesVal = rawRow[fallbackMesKey];
+                }
+                if (originVal === '-' && rawRow) {
+                    const fallbackOriginKey = Object.keys(rawRow).find(k => k.replace(/[^A-Z0-9]/gi, '').toUpperCase().includes('TNO'));
+                    if (fallbackOriginKey) originVal = rawRow[fallbackOriginKey];
+                }
+
                 const bagEntity = {
                     bagTagId:      bagTagId,
                     eventTime:     combinedEventTime,
@@ -1729,11 +1748,8 @@
                     dateOnlyISO:   extractISODate(combinedEventTime), 
                     std:           formatExcelDate(rawStd),
                     flight:        String(getRawValue(row, ['FLIGHT', 'FLIGHTNO'])).trim(),
-                    
-                    // 2 & 3. Account for stripped underscores (TDP_IDCURRNAME and TNO_NAME)
-                    rummage:       String(getRawValue(row, ['TDP_IDCURRNAME', 'MES'])).trim(),
-                    rummageArea:   String(getRawValue(row, ['TNO_NAME', 'ORIGINPOINT'])).trim(),
-                    
+                    rummage:       String(mesVal).trim(),         // Maps to MES
+                    rummageArea:   String(originVal).trim(),      // Maps to Origin Point
                     reason:        String(getRawValue(row, ['REASON', 'RUMMAGEREASON'])).trim(),
                     chute:         String(getRawValue(row, ['CHUTE', 'CHUTEID', 'ASSIGNEDCHUTE'])).trim(),
                     groundHandler: String(getRawValue(row, ['GROUNDHANDLER', 'HANDLER'])).trim(),
