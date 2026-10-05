@@ -1704,12 +1704,16 @@
                 const rawBagTag = getRawValue(row, ['BAGTAGID', 'BAGTAG', 'LICENSEPLATE']);
                 const bagTagId = (rawBagTag !== '-' && rawBagTag !== '') ? String(rawBagTag).trim() : `UNKNOWN_${index + 1}`;
 
+                // 1. Directly target EVENTTIME column for the Timestamp
+                const rawEventTime = getRawValue(row, ['EVENTTIME']);
                 const rawDate = getRawValue(row, ['DATE', 'EVENTDATE']);
-                const rawTime = getRawValue(row, ['TIME', 'EVENTTIME']);
+                const rawTime = getRawValue(row, ['TIME']);
                 const rawStd  = getRawValue(row, ['STD', 'STDTIME', 'SCHEDULEDTIME']);
 
                 let combinedEventTime = '-';
-                if (rawDate !== '-' && rawTime !== '-') {
+                if (rawEventTime !== '-') {
+                    combinedEventTime = formatExcelDate(rawEventTime);
+                } else if (rawDate !== '-' && rawTime !== '-') {
                     if (/^\d+(\.\d+)?$/.test(String(rawDate).trim()) && /^\d+(\.\d+)?$/.test(String(rawTime).trim())) {
                         combinedEventTime = formatExcelDate(parseFloat(rawDate) + parseFloat(rawTime));
                     } else { combinedEventTime = formatExcelDate(`${rawDate} ${rawTime}`); }
@@ -1725,8 +1729,11 @@
                     dateOnlyISO:   extractISODate(combinedEventTime), 
                     std:           formatExcelDate(rawStd),
                     flight:        String(getRawValue(row, ['FLIGHT', 'FLIGHTNO'])).trim(),
+                    
+                    // 2 & 3. Account for stripped underscores (TDP_IDCURRNAME and TNO_NAME)
                     rummage:       String(getRawValue(row, ['TDP_IDCURRNAME', 'MES'])).trim(),
                     rummageArea:   String(getRawValue(row, ['TNO_NAME', 'ORIGINPOINT'])).trim(),
+                    
                     reason:        String(getRawValue(row, ['REASON', 'RUMMAGEREASON'])).trim(),
                     chute:         String(getRawValue(row, ['CHUTE', 'CHUTEID', 'ASSIGNEDCHUTE'])).trim(),
                     groundHandler: String(getRawValue(row, ['GROUNDHANDLER', 'HANDLER'])).trim(),
@@ -2540,6 +2547,56 @@
                 } else { return formatExcelDate(`${rawDate} ${rawTime}`); }
             } else if (rawDate !== '-') { return formatExcelDate(rawDate); }
             return '-';
+        }
+
+        function processBagEntities(rows) {
+            bagDataset.clear();
+            rows.forEach((rawRow, index) => {
+                const row = normalizeRowKeys(rawRow);
+                
+                const rawBagTag = getRawValue(row, ['BAGTAGID', 'BAGTAG', 'LICENSEPLATE']);
+                const bagTagId = (rawBagTag !== '-' && rawBagTag !== '') ? String(rawBagTag).trim() : `UNKNOWN_${index + 1}`;
+
+                // 1. Directly target EVENTTIME column for the Timestamp
+                const rawEventTime = getRawValue(row, ['EVENTTIME']);
+                const rawDate = getRawValue(row, ['DATE', 'EVENTDATE']);
+                const rawTime = getRawValue(row, ['TIME']);
+                const rawStd  = getRawValue(row, ['STD', 'STDTIME', 'SCHEDULEDTIME']);
+
+                let combinedEventTime = '-';
+                if (rawEventTime !== '-') {
+                    combinedEventTime = formatExcelDate(rawEventTime);
+                } else if (rawDate !== '-' && rawTime !== '-') {
+                    if (/^\d+(\.\d+)?$/.test(String(rawDate).trim()) && /^\d+(\.\d+)?$/.test(String(rawTime).trim())) {
+                        combinedEventTime = formatExcelDate(parseFloat(rawDate) + parseFloat(rawTime));
+                    } else { combinedEventTime = formatExcelDate(`${rawDate} ${rawTime}`); }
+                } else if (rawDate !== '-') { combinedEventTime = formatExcelDate(rawDate); }
+
+                const parsedDt = parseCustomDateToJS(combinedEventTime);
+                const rawHourStd = String(getRawValue(row, ['HOURBEFORESTD', 'HOURSBEFORESTD'])).trim();
+
+                const bagEntity = {
+                    bagTagId:      bagTagId,
+                    eventTime:     combinedEventTime,
+                    timestamp:     parsedDt ? parsedDt.getTime() : 0, 
+                    dateOnlyISO:   extractISODate(combinedEventTime), 
+                    std:           formatExcelDate(rawStd),
+                    flight:        String(getRawValue(row, ['FLIGHT', 'FLIGHTNO'])).trim(),
+                    
+                    // 2 & 3. Account for stripped underscores (TDP_IDCURRNAME and TNO_NAME)
+                    rummage:       String(getRawValue(row, ['TDP_IDCURRNAME', 'MES'])).trim(),
+                    rummageArea:   String(getRawValue(row, ['TNO_NAME', 'ORIGINPOINT'])).trim(),
+                    
+                    reason:        String(getRawValue(row, ['REASON', 'RUMMAGEREASON'])).trim(),
+                    chute:         String(getRawValue(row, ['CHUTE', 'CHUTEID', 'ASSIGNEDCHUTE'])).trim(),
+                    groundHandler: String(getRawValue(row, ['GROUNDHANDLER', 'HANDLER'])).trim(),
+                    hourBeforeStd: rawHourStd,
+                    hourBeforeStdNum: parseHourString(rawHourStd) 
+                };
+                
+                // Enforce 1 row = 1 unique bag by using a row-specific key
+                bagDataset.set(`ROW_${index}_${bagTagId}`, bagEntity);
+            });
         }
 
         async function loadDataFiles() {
