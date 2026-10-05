@@ -2620,9 +2620,9 @@
             overlay.classList.remove('hidden');
             try {
                 // Ensure this points to the exact correct path. If uploading to GitHub, use raw URL if local fails.
-                const mainData = await parseXLSB("./MES_data.xlsb");
+                const mainData = await parseXLSB("./mes_data.xlsb");
                 if (mainData.length === 0) {
-                    alert("Could not load MES_data.xlsb. Please ensure the file exists in the directory.");
+                    alert("Could not load mes_data.xlsb. Please ensure the file exists in the directory.");
                     overlay.classList.add('hidden'); return;
                 }
 
