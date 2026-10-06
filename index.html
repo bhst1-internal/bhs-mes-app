@@ -1784,6 +1784,45 @@
             populateMultiSelect('menu-reason', 'text-reason', Array.from(reasons).sort(), 'All Reasons', filterState.reason);
             populateMultiSelect('menu-mes', 'text-mes', Array.from(mesSet).sort(), 'All MES', filterState.mes, true);
             populateMultiSelect('menu-reclaim', 'text-reclaim', Array.from(reclaims).sort(), 'All Areas', filterState.reclaim, true);
+
+            // --- ADDED PRESET LOGIC ---
+            const reclaimMenu = $id('menu-reclaim');
+            const presetsHtml = `
+                <div class="border-b border-gray-200 bg-white flex flex-col p-1.5 gap-1.5 sticky top-0 z-20 shadow-sm">
+                    <button type="button" class="text-left px-2.5 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded transition-colors" id="preset-all-ch">+ Select All CH</button>
+                    <button type="button" class="text-left px-2.5 py-1.5 text-xs font-bold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded transition-colors" id="preset-all-transfer">+ Select All Transfer (BT/BM)</button>
+                </div>
+            `;
+            reclaimMenu.insertAdjacentHTML('afterbegin', presetsHtml);
+
+            const updateReclaimCheckboxes = () => {
+                const checkboxes = reclaimMenu.querySelectorAll('input[type="checkbox"]');
+                checkboxes.forEach(cb => {
+                    if (cb.value === 'ALL') cb.checked = filterState.reclaim.includes('ALL');
+                    else cb.checked = filterState.reclaim.includes(cb.value);
+                });
+                const textEl = $id('text-reclaim');
+                if (filterState.reclaim.includes('ALL')) textEl.textContent = 'All Areas';
+                else if (filterState.reclaim.length === 1) textEl.textContent = filterState.reclaim[0];
+                else textEl.textContent = `${filterState.reclaim.length} Selected`;
+            };
+
+            $id('preset-all-ch').addEventListener('click', (e) => {
+                e.stopPropagation();
+                const chOptions = Array.from(reclaims).filter(r => r.startsWith('CH'));
+                filterState.reclaim = chOptions.length > 0 ? chOptions : ['ALL'];
+                updateReclaimCheckboxes();
+                triggerFilters();
+            });
+
+            $id('preset-all-transfer').addEventListener('click', (e) => {
+                e.stopPropagation();
+                const transferOptions = Array.from(reclaims).filter(r => r.startsWith('BT') || r.startsWith('BM'));
+                filterState.reclaim = transferOptions.length > 0 ? transferOptions : ['ALL'];
+                updateReclaimCheckboxes();
+                triggerFilters();
+            });
+            // --- END PRESET LOGIC ---
         }
 
         function applyFiltersAndRender() {
@@ -2538,7 +2577,11 @@
 
                 const parsedDt = parseCustomDateToJS(combinedEventTime);
                 const rawHourStd = String(getRawValue(row, ['HOURBEFORESTD', 'HOURSBEFORESTD'])).trim();
-                const rawOrigin = String(getRawValue(row, ['TNONAME', 'ORIGINPOINT'])).trim(); // <-- ADDED
+                const rawOrigin = String(getRawValue(row, ['TNONAME', 'ORIGINPOINT'])).trim();
+
+                // Safely extract and strip "MES " or "MES-" prefix if it exists
+                const rawRummage = String(getRawValue(row, ['TDPIDCURRNAME', 'MES'])).trim();
+                const cleanRummage = rawRummage.replace(/^MES[\s\-]*/i, '').trim() || rawRummage;
 
                 const bagEntity = {
                     bagTagId:      bagTagId,
@@ -2548,10 +2591,9 @@
                     std:           formatExcelDate(rawStd),
                     flight:        String(getRawValue(row, ['FLIGHT', 'FLIGHTNO'])).trim(),
                     
-                    // 2 & 3. Account for stripped underscores (TDPIDCURRNAME and TNONAME)
-                    rummage:       String(getRawValue(row, ['TDPIDCURRNAME', 'MES'])).trim(),
-                    fullOrigin:    rawOrigin, // <-- ADDED
-                    rummageArea:   rawOrigin !== '-' ? rawOrigin.split('-')[0] : '-', // <-- UPDATED
+                    rummage:       cleanRummage, // Extracted value now stripped of prefix
+                    fullOrigin:    rawOrigin,
+                    rummageArea:   rawOrigin !== '-' ? rawOrigin.split('-')[0] : '-',
                     
                     reason:        String(getRawValue(row, ['REASON', 'RUMMAGEREASON'])).trim(),
                     chute:         String(getRawValue(row, ['CHUTE', 'CHUTEID', 'ASSIGNEDCHUTE'])).trim(),
