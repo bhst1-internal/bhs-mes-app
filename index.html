@@ -427,10 +427,17 @@
                 <div class="bg-white p-4 rounded-lg shadow flex flex-col relative h-[390px]">
                     <div class="flex justify-between items-center border-b pb-2 mb-2 shrink-0">
                         <h3 class="font-bold text-gray-700">5. MES Load Distribution</h3>
-                        <button class="export-chart-btn flex items-center gap-1 text-[0.65rem] font-bold text-gray-500 hover:text-blue-600 transition bg-gray-100 px-2 py-1 rounded border border-gray-200" data-target="chart-histogram" title="Save Chart as JPEG">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                            JPEG
-                        </button>
+                        <div class="flex items-center gap-2">
+                            <button class="export-chart-btn flex items-center gap-1 text-[0.65rem] font-bold text-gray-500 hover:text-blue-600 transition bg-gray-100 px-2 py-1 rounded border border-gray-200" data-target="chart-histogram" title="Save Chart as JPEG">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                                JPEG
+                            </button>
+                            <select id="mes-sort" class="border p-1 rounded text-xs bg-gray-50 focus:ring-blue-500 outline-none font-medium">
+                                <option value="bags-desc">Total Bags &darr;</option>
+                                <option value="bags-asc">Total Bags &uarr;</option>
+                                <option value="alpha">Alphabetical</option>
+                            </select>
+                        </div>
                     </div>
                     <div id="chart-histogram" class="flex-1 w-full min-h-0 relative"></div>
                 </div>
@@ -1464,7 +1471,7 @@
 
         $id('upload').addEventListener('change', handleFileUpload);
         
-        const filterIds = ['filter-start-date', 'filter-end-date', 'slicer-interval', 'rummage-sort'];
+        const filterIds = ['filter-start-date', 'filter-end-date', 'slicer-interval', 'rummage-sort', 'mes-sort'];
         function triggerFilters() { setTimeout(() => { applyFiltersAndRender(); }, 10); }
         filterIds.forEach(id => $id(id).addEventListener('change', triggerFilters));
         
@@ -1876,7 +1883,14 @@
             });
 
             let sortedMes = Array.from(mesCounts.keys());
-            sortedMes.sort((a, b) => mesCounts.get(b) - mesCounts.get(a));
+            const mesSortMethod = $id('mes-sort') ? $id('mes-sort').value : 'bags-desc';
+
+            sortedMes.sort((a, b) => {
+                if (mesSortMethod === 'bags-desc') return mesCounts.get(b) - mesCounts.get(a);
+                if (mesSortMethod === 'bags-asc') return mesCounts.get(a) - mesCounts.get(b);
+                if (mesSortMethod === 'alpha') return a.localeCompare(b);
+                return 0;
+            });
 
             const xVals = sortedMes, yVals = sortedMes.map(m => mesCounts.get(m));
             const colors = sortedMes.map((a, i) => areaColorPalette[i % areaColorPalette.length] || '#94a3b8');
@@ -2379,15 +2393,29 @@
             tracesMap.forEach(timeMap => {
                 const times = Array.from(timeMap.keys());
                 if(times.length > 0) {
-                    const traceMin = Math.min(...times), traceMax = Math.max(...times);
-                    if (!timeMap.has(traceMin - stepMs)) timeMap.set(traceMin - stepMs, 0);
-                    if (!timeMap.has(traceMax + stepMs)) timeMap.set(traceMax + stepMs, 0);
-                    minTime = Math.min(minTime, traceMin - stepMs); maxTime = Math.max(maxTime, traceMax + stepMs);
+                    minTime = Math.min(minTime, Math.min(...times));
+                    maxTime = Math.max(maxTime, Math.max(...times));
                 }
             });
 
+            if (minTime !== Infinity && maxTime !== -Infinity) {
+                // Pad by one step to let the chart drop to zero on edges if necessary
+                minTime -= stepMs;
+                maxTime += stepMs;
+            }
+
             let customTicks = { tickvals: [], ticktext: [] };
             if (minTime !== Infinity && maxTime !== -Infinity) customTicks = generateCustomTicks(minTime, maxTime, interval);
+
+            // Generate an exact bin block layout mapping to inject natural 0s for missing datasets 
+            const allBins = [];
+            if (minTime !== Infinity && maxTime !== -Infinity) {
+                let curr = minTime;
+                while (curr <= maxTime) {
+                    allBins.push(curr);
+                    curr += stepMs;
+                }
+            }
 
             const plotlyData = [];
             const definedOrder = ['MA', 'MB', 'MC1', 'MC2', 'MS1', 'MS2'];
@@ -2401,7 +2429,12 @@
             traceKeys.forEach(traceKey => {
                 const timeMap = tracesMap.get(traceKey);
                 const xVals = [], yVals = [];
-                Array.from(timeMap.keys()).sort((a, b) => a - b).forEach(t => { xVals.push(new Date(t)); yVals.push(timeMap.get(t)); });
+                // Force plotting exactly to the complete bins layout to capture drops to exactly 0
+                allBins.forEach(t => { 
+                    xVals.push(new Date(t)); 
+                    yVals.push(timeMap.has(t) ? timeMap.get(t) : 0); 
+                });
+                
                 const traceColor = areaColorMap.get(traceKey) || '#94a3b8';
                 plotlyData.push({
                     x: xVals, y: yVals, name: traceKey, type: 'scatter', mode: 'lines', fill: 'tozeroy', opacity: 0.5,    
@@ -2409,12 +2442,34 @@
                 });
             });
 
+            // Calculate vertical timeline dividing lines at precisely midnight bounds where multi-dates apply
+            const shapes = [];
+            if (minTime !== Infinity && maxTime !== -Infinity && interval !== 'daily') {
+                let currentDay = new Date(minTime);
+                currentDay.setHours(0, 0, 0, 0);
+                let nextDay = currentDay.getTime() + 86400000;
+                
+                while (nextDay <= maxTime) {
+                    if (nextDay > minTime && nextDay < maxTime) {
+                        shapes.push({
+                            type: 'line',
+                            x0: nextDay, x1: nextDay,
+                            y0: 0, y1: 1,
+                            yref: 'paper', xref: 'x',
+                            line: { color: 'rgba(156, 163, 175, 0.6)', width: 1.5, dash: 'dash' }
+                        });
+                    }
+                    nextDay += 86400000;
+                }
+            }
+
             const layout = {
                 margin: { t: 40, l: 60, r: 20, b: 40 }, paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff',
                 xaxis: { type: 'date', tickvals: customTicks.tickvals, ticktext: customTicks.ticktext, tickmode: 'array', range: [minTime, maxTime], hoverformat: '%d/%m/%y %H:%M' },
                 yaxis: { title: { text: 'Total Bags', standoff: 30 } }, showlegend: true, hovermode: 'x unified', 
                 hoverlabel: { bgcolor: '#1f2937', bordercolor: '#374151', namelength: -1, align: 'left', font: { color: '#d1d5db', size: 12, family: 'ui-sans-serif, system-ui, sans-serif' } },
-                legend: { orientation: 'h', yanchor: 'bottom', y: 1.05, xanchor: 'left', x: 0 }
+                legend: { orientation: 'h', yanchor: 'bottom', y: 1.05, xanchor: 'left', x: 0 },
+                shapes: shapes
             };
             Plotly.react(chartDiv, plotlyData, layout, PLOTLY_CONFIG);
         }
