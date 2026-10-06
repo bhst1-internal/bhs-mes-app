@@ -1099,7 +1099,7 @@
             if (btnReset) $id('reset-confirm-modal').classList.remove('hidden');
         });
 
-        $id('btn-cancel-reset').addEventListener('click', () => $id('reset-confirm-modal').classList.add('hidden');
+        $id('btn-cancel-reset').addEventListener('click', () => $id('reset-confirm-modal').classList.add('hidden'));
         $id('btn-confirm-reset').addEventListener('click', () => {
             simEntries = []; 
             triggerSimulation();
