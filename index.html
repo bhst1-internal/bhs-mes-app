@@ -1434,17 +1434,29 @@
         const tableTooltipContent = $id('table-tooltip-content');
 
         DOM.reclaimTbody.addEventListener('mouseover', (e) => {
-            const cell = e.target.closest('.flight-cell');
-            if (!cell) return;
-            const flt = cell.getAttribute('data-flight'), std = cell.getAttribute('data-std'), disp = cell.getAttribute('data-dispatch');
+            const flightCell = e.target.closest('.flight-cell');
+            const originCell = e.target.closest('.origin-cell');
             
-            tableTooltipContent.innerHTML = `
-                <div class="font-bold text-gray-300 border-b border-gray-600 pb-1.5 mb-1.5 uppercase tracking-wide">Flight Details: <span class="text-blue-400">${flt}</span></div>
-                <div class="mb-1"><span class="text-gray-400">STD:</span> <span class="font-bold text-white ml-1">${stripSecondsFromDate(std)}</span></div>
-                <div><span class="text-gray-400">Dispatch Time:</span> <span class="font-bold text-white ml-1">${disp}</span></div>
-            `;
-            tableCustomTooltip.classList.remove('invisible', 'opacity-0');
-            tableCustomTooltip.classList.add('opacity-100', 'visible');
+            if (flightCell) {
+                const flt = flightCell.getAttribute('data-flight'), std = flightCell.getAttribute('data-std'), disp = flightCell.getAttribute('data-dispatch');
+                
+                tableTooltipContent.innerHTML = `
+                    <div class="font-bold text-gray-300 border-b border-gray-600 pb-1.5 mb-1.5 uppercase tracking-wide">Flight Details: <span class="text-blue-400">${flt}</span></div>
+                    <div class="mb-1"><span class="text-gray-400">STD:</span> <span class="font-bold text-white ml-1">${stripSecondsFromDate(std)}</span></div>
+                    <div><span class="text-gray-400">Dispatch Time:</span> <span class="font-bold text-white ml-1">${disp}</span></div>
+                `;
+                tableCustomTooltip.classList.remove('invisible', 'opacity-0');
+                tableCustomTooltip.classList.add('opacity-100', 'visible');
+            } else if (originCell) {
+                const fullOrig = originCell.getAttribute('data-full-origin');
+                
+                tableTooltipContent.innerHTML = `
+                    <div class="font-bold text-gray-300 border-b border-gray-600 pb-1.5 mb-1.5 uppercase tracking-wide">Origin Point Details</div>
+                    <div><span class="text-gray-400">Full Origin:</span> <span class="font-bold text-white ml-1">${fullOrig}</span></div>
+                `;
+                tableCustomTooltip.classList.remove('invisible', 'opacity-0');
+                tableCustomTooltip.classList.add('opacity-100', 'visible');
+            }
         });
 
         DOM.reclaimTbody.addEventListener('mousemove', (e) => {
@@ -1455,7 +1467,7 @@
         });
 
         DOM.reclaimTbody.addEventListener('mouseout', (e) => {
-            if (!e.target.closest('.flight-cell')) return;
+            if (!e.target.closest('.flight-cell') && !e.target.closest('.origin-cell')) return;
             tableCustomTooltip.classList.add('invisible', 'opacity-0');
             tableCustomTooltip.classList.remove('opacity-100', 'visible');
         });
@@ -2483,12 +2495,19 @@
                 const formattedStd = stripSecondsFromDate(bag.std);
                 const formattedHourBeforeStd = formatDecimalToHHmm(bag.hourBeforeStdNum);
 
+                // Format MES (Remove "MES " text)
+                const displayMes = bag.rummage ? bag.rummage.replace(/^MES\s*/i, '') : '';
+                
+                // Format Origin Point (Extract text before first "-")
+                const fullOrigin = bag.rummageArea || '';
+                const displayOrigin = fullOrigin.split('-')[0];
+
                 return `<tr class="hover:bg-gray-50 transition-colors">
                     <td class="font-mono font-semibold text-center" title="${bag.eventTime}">${bag.eventTime}</td>
                     <td class="font-mono text-center" title="${formattedStd}">${formattedStd}</td>
                     <td class="font-mono font-bold text-gray-900 text-center" title="${bag.bagTagId}">${bag.bagTagId}</td>
-                    <td class="text-center font-medium text-gray-700" title="${bag.rummage}">${bag.rummage}</td>
-                    <td class="font-semibold text-indigo-600 text-center" title="${bag.rummageArea}">${bag.rummageArea}</td>
+                    <td class="text-center font-medium text-gray-700" title="${bag.rummage}">${displayMes}</td>
+                    <td class="font-semibold text-indigo-600 text-center origin-cell cursor-help hover:text-indigo-800" data-full-origin="${fullOrigin}">${displayOrigin}</td>
                     <td class="text-center text-gray-600" title="${bag.reason}">${bag.reason}</td>
                     <td class="font-bold flight-cell cursor-pointer text-blue-600 hover:text-blue-800 text-center" 
                         data-flight="${bag.flight}" data-std="${bag.std}" data-dispatch="${bag.eventTime}">${bag.flight}</td>
