@@ -948,7 +948,7 @@
                     timeStr = `${String(dt.getDate()).padStart(2, '0')}/${String(dt.getMonth() + 1).padStart(2, '0')}`;
                 } else {
                     const timeOnly = `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`;
-                    timeStr = isSingleDate ? timeOnly : `${String(dt.getDate()).padStart(2, '0')}/${String(dt.getMonth() + 1).padStart(2, '0')} <br>${timeOnly}`;
+                    timeStr = isSingleDate ? timeOnly : `${String(dt.getDate()).padStart(2, '0')}/${String(dt.getMonth() + 1).padStart(2, '0')} <br> ${timeOnly}`;
                 }
                 theadHTML.push(`<th class="sticky top-0 z-20 bg-gray-50 text-[0.65rem] font-bold text-gray-500 uppercase tracking-wider px-2 py-3 border-b border-gray-200 shadow-sm text-center whitespace-nowrap min-w-[60px] w-[60px]">${timeStr}</th>`);
             });
@@ -1400,7 +1400,7 @@
             if (!entry) return;
             
             currentOpenTripId = tripId;
-            $id('trip-modal-title').innerHTML = `Transport Details: <span class="text-blue-600">${entry.name}</span> at${entry.time}`;
+            $id('trip-modal-title').innerHTML = `Transport Details: <span class="text-blue-600">${entry.name}</span> at ${entry.time}`;
             
             const grouped = {};
             (entry.bags || []).forEach(b => {
@@ -1654,7 +1654,7 @@
                     const min = total_mins % 60;
                     const hr24 = Math.floor(total_mins / 60) % 24;
                     
-                    return `${String(dateObj.getUTCDate()).padStart(2, '0')}/${String(dateObj.getUTCMonth() + 1).padStart(2, '0')}/${String(dateObj.getUTCFullYear()).slice(-2)}${String(hr24).padStart(2, '0')}:${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+                    return `${String(dateObj.getUTCDate()).padStart(2, '0')}/${String(dateObj.getUTCMonth() + 1).padStart(2, '0')}/${String(dateObj.getUTCFullYear()).slice(-2)} ${String(hr24).padStart(2, '0')}:${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
                 }
             }
 
@@ -1680,7 +1680,7 @@
                     if (upperAmPm === 'AM' && hr === 12) hr = 0;
                 }
 
-                return `${String(dd).padStart(2, '0')}/${String(mm).padStart(2, '0')}/${String(yyyy).slice(-2)}${String(hr).padStart(2, '0')}:${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+                return `${String(dd).padStart(2, '0')}/${String(mm).padStart(2, '0')}/${String(yyyy).slice(-2)} ${String(hr).padStart(2, '0')}:${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
             }
             
             return valStr;
@@ -1694,6 +1694,72 @@
                 return `${yy}-${parts[1]}-${parts[0]}`;
             }
             return '';
+        }
+
+        function processBagEntities(rows) {
+            bagDataset.clear();
+
+            // DEBUGGING: Log the exact headers found in the Excel file to the browser console
+            if (rows.length > 0) {
+                console.log("Excel Headers Detected by Dashboard:", Object.keys(rows[0]));
+            }
+
+            rows.forEach((rawRow, index) => {
+                const row = normalizeRowKeys(rawRow);
+                
+                const rawBagTag = getRawValue(row, ['BAGTAGID', 'BAGTAG', 'LICENSEPLATE']);
+                const bagTagId = (rawBagTag !== '-' && rawBagTag !== '') ? String(rawBagTag).trim() : `UNKNOWN_${index + 1}`;
+
+                const rawEventTime = getRawValue(row, ['EVENTTIME', 'EVENT_TIME']);
+                const rawDate = getRawValue(row, ['DATE', 'EVENTDATE']);
+                const rawTime = getRawValue(row, ['TIME']);
+                const rawStd  = getRawValue(row, ['STD', 'STDTIME', 'SCHEDULEDTIME']);
+
+                let combinedEventTime = '-';
+                if (rawEventTime !== '-') {
+                    combinedEventTime = formatExcelDate(rawEventTime);
+                } else if (rawDate !== '-' && rawTime !== '-') {
+                    if (/^\d+(\.\d+)?$/.test(String(rawDate).trim()) && /^\d+(\.\d+)?$/.test(String(rawTime).trim())) {
+                        combinedEventTime = formatExcelDate(parseFloat(rawDate) + parseFloat(rawTime));
+                    } else { combinedEventTime = formatExcelDate(`${rawDate} ${rawTime}`); }
+                } else if (rawDate !== '-') { combinedEventTime = formatExcelDate(rawDate); }
+
+                const parsedDt = parseCustomDateToJS(combinedEventTime);
+                const rawHourStd = String(getRawValue(row, ['HOURBEFORESTD', 'HOURSBEFORESTD'])).trim();
+
+                // 1. First try normal targeted matching
+                let mesVal = getRawValue(row, ['TDPIDCURRNAME', 'TDP', 'IDCURRNAME', 'MES']);
+                let originVal = getRawValue(row, ['TNONAME', 'TNO', 'TERMINALNODENAME', 'ORIGINPOINT']);
+
+                // 2. FUZZY MATCHING FALLBACK: If standard lookup fails, aggressively scan original headers
+                if (mesVal === '-' && rawRow) {
+                    const fallbackMesKey = Object.keys(rawRow).find(k => k.replace(/[^A-Z0-9]/gi, '').toUpperCase().includes('TDP'));
+                    if (fallbackMesKey) mesVal = rawRow[fallbackMesKey];
+                }
+                if (originVal === '-' && rawRow) {
+                    const fallbackOriginKey = Object.keys(rawRow).find(k => k.replace(/[^A-Z0-9]/gi, '').toUpperCase().includes('TNO'));
+                    if (fallbackOriginKey) originVal = rawRow[fallbackOriginKey];
+                }
+
+                const bagEntity = {
+                    bagTagId:      bagTagId,
+                    eventTime:     combinedEventTime,
+                    timestamp:     parsedDt ? parsedDt.getTime() : 0, 
+                    dateOnlyISO:   extractISODate(combinedEventTime), 
+                    std:           formatExcelDate(rawStd),
+                    flight:        String(getRawValue(row, ['FLIGHT', 'FLIGHTNO'])).trim(),
+                    rummage:       String(mesVal).trim(),         // Maps to MES
+                    rummageArea:   String(originVal).trim(),      // Maps to Origin Point
+                    reason:        String(getRawValue(row, ['REASON', 'RUMMAGEREASON'])).trim(),
+                    chute:         String(getRawValue(row, ['CHUTE', 'CHUTEID', 'ASSIGNEDCHUTE'])).trim(),
+                    groundHandler: String(getRawValue(row, ['GROUNDHANDLER', 'HANDLER'])).trim(),
+                    hourBeforeStd: rawHourStd,
+                    hourBeforeStdNum: parseHourString(rawHourStd) 
+                };
+                
+                // Enforce 1 row = 1 unique bag by using a row-specific key
+                bagDataset.set(`ROW_${index}_${bagTagId}`, bagEntity);
+            });
         }
 
         function setDefaultDateFilters() {
@@ -2164,14 +2230,14 @@
             
             $id('sim-out-bags').textContent = globalTotalBags.toLocaleString();
             let displayTime = Math.round(globalTotalMins) + 'm';
-            if (globalTotalMins > 60) displayTime = `${Math.floor(globalTotalMins / 60)}h${Math.round(globalTotalMins % 60)}m`;
+            if (globalTotalMins > 60) displayTime = `${Math.floor(globalTotalMins / 60)}h ${Math.round(globalTotalMins % 60)}m`;
             $id('sim-out-duration').textContent = displayTime;
             
             const maxWlEl = $id('out-max-workload'), maxWlDateTimeEl = $id('out-max-workload-datetime'), maxWlTooltip = $id('out-max-workload-tooltip');
             if (simEntries.length > 0 && maxWorkloadDetails) {
                 maxWlEl.innerHTML = `${Math.round(globalMaxWorkload)} <span class="text-sm font-semibold text-teal-500 ml-0.5">minutes</span>`;
-                maxWlDateTimeEl.textContent = `${maxWorkloadDetails.date}${maxWorkloadDetails.time}`;
-                maxWlTooltip.innerHTML = `<div class="font-bold text-gray-300 border-b border-gray-600 pb-1.5 mb-1.5 uppercase tracking-wide">WORKLOAD DETAILS</div><div class="mb-1"><span class="text-gray-400">Date:</span> <span class="font-bold text-white ml-1">${maxWorkloadDetails.date}</span></div><div class="mb-1"><span class="text-gray-400">Time:</span> <span class="font-bold text-white ml-1">${maxWorkloadDetails.time}</span></div><div class="mb-1"><span class="text-gray-400">Total Flight:</span> <span class="font-bold text-white ml-1">${maxWorkloadDetails.totalFlight}</span></div><div class="mb-1"><span class="text-gray-400">Total Bags:</span> <span class="font-bold text-white ml-1">${maxWorkloadDetails.totalBags}</span></div><div class="mb-1"><span class="text-gray-400">Total Transport:</span> <span class="font-bold text-white ml-1">${maxWorkloadDetails.totalTrans} <span class="text-gray-400 font-normal opacity-90">(Lorry: ${maxWorkloadDetails.lorryCount} \vert{} Trolley:${maxWorkloadDetails.trolleyCount})</span></span></div><div><span class="text-gray-400">Total Trip:</span> <span class="font-bold text-white ml-1">${maxWorkloadDetails.totalTrip}</span></div><div class="absolute top-full left-1/2 transform -translate-x-1/2 -mt-[1px] border-[6px] border-transparent border-t-gray-800"></div>`;
+                maxWlDateTimeEl.textContent = `${maxWorkloadDetails.date} ${maxWorkloadDetails.time}`;
+                maxWlTooltip.innerHTML = `<div class="font-bold text-gray-300 border-b border-gray-600 pb-1.5 mb-1.5 uppercase tracking-wide">WORKLOAD DETAILS</div><div class="mb-1"><span class="text-gray-400">Date:</span> <span class="font-bold text-white ml-1">${maxWorkloadDetails.date}</span></div><div class="mb-1"><span class="text-gray-400">Time:</span> <span class="font-bold text-white ml-1">${maxWorkloadDetails.time}</span></div><div class="mb-1"><span class="text-gray-400">Total Flight:</span> <span class="font-bold text-white ml-1">${maxWorkloadDetails.totalFlight}</span></div><div class="mb-1"><span class="text-gray-400">Total Bags:</span> <span class="font-bold text-white ml-1">${maxWorkloadDetails.totalBags}</span></div><div class="mb-1"><span class="text-gray-400">Total Transport:</span> <span class="font-bold text-white ml-1">${maxWorkloadDetails.totalTrans} <span class="text-gray-400 font-normal opacity-90">(Lorry: ${maxWorkloadDetails.lorryCount} | Trolley: ${maxWorkloadDetails.trolleyCount})</span></span></div><div><span class="text-gray-400">Total Trip:</span> <span class="font-bold text-white ml-1">${maxWorkloadDetails.totalTrip}</span></div><div class="absolute top-full left-1/2 transform -translate-x-1/2 -mt-[1px] border-[6px] border-transparent border-t-gray-800"></div>`;
                 maxWlTooltip.classList.remove('hidden');
             } else {
                 maxWlEl.textContent = '-'; maxWlDateTimeEl.textContent = '-'; maxWlTooltip.innerHTML = ''; maxWlTooltip.classList.add('hidden');
@@ -2179,5 +2245,411 @@
 
             const maxTransEl = $id('out-max-transports'), maxTransDateTimeEl = $id('out-max-transports-datetime'), maxTransTooltip = $id('out-max-transports-tooltip');
             if (simEntries.length > 0 && maxTransDetails && globalMaxTransports > 0) {
-                maxTransEl.textContent = globalMaxTransports; maxTransDateTimeEl.textContent = `${maxTransDetails.date}${maxTransDetails.time}`;
-                maxTransTooltip.innerHTML = `<div class="font-bold text-gray-300 border-b border-
+                maxTransEl.textContent = globalMaxTransports; maxTransDateTimeEl.textContent = `${maxTransDetails.date} ${maxTransDetails.time}`;
+                maxTransTooltip.innerHTML = `<div class="font-bold text-gray-300 border-b border-gray-600 pb-1.5 mb-1.5 uppercase tracking-wide">FLEET DETAILS</div><div class="mb-1"><span class="text-gray-400">Date:</span> <span class="font-bold text-white ml-1">${maxTransDetails.date}</span></div><div class="mb-1"><span class="text-gray-400">Time:</span> <span class="font-bold text-white ml-1">${maxTransDetails.time}</span></div><div class="mb-1"><span class="text-gray-400">Lorry Count:</span> <span class="font-bold text-white ml-1">${maxTransDetails.lorryCount}</span></div><div><span class="text-gray-400">Trolley Count:</span> <span class="font-bold text-white ml-1">${maxTransDetails.trolleyCount}</span></div><div class="absolute top-full left-1/2 transform -translate-x-1/2 -mt-[1px] border-[6px] border-transparent border-t-gray-800"></div>`;
+                maxTransTooltip.classList.remove('hidden');
+            } else {
+                maxTransEl.textContent = '-'; maxTransDateTimeEl.textContent = '-'; maxTransTooltip.innerHTML = ''; maxTransTooltip.classList.add('hidden');
+            }
+        }
+
+        function generateCustomTicks(minTime, maxTime, interval) {
+            const tickvals = [], ticktext = [];
+            const diff = maxTime - minTime;
+            let tickStepMs;
+            let isThirteenDaysOrMore = diff >= 86400000 * 12.5;
+            let isEightDaysOrMore = diff >= 86400000 * 7.5;
+            
+            if (interval === 'daily') { tickStepMs = 86400000; } 
+            else {
+                if (isThirteenDaysOrMore) tickStepMs = 86400000; 
+                else if (isEightDaysOrMore) tickStepMs = 43200000; 
+                else if (diff >= 86400000 * 2.5) tickStepMs = 43200000; 
+                else tickStepMs = 10800000; 
+            }
+
+            let currentDt = new Date(minTime);
+            if (tickStepMs >= 86400000) { currentDt.setHours(0,0,0,0); } 
+            else if (tickStepMs === 43200000) { const h = currentDt.getHours(); currentDt.setHours(h - (h % 12), 0, 0, 0); } 
+            else { const h = currentDt.getHours(); currentDt.setHours(h - (h % 3), 0, 0, 0); }
+            
+            let current = currentDt.getTime();
+            const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+            let safety = 0;
+            while (current <= maxTime + tickStepMs && safety < 1000) {
+                tickvals.push(current);
+                const d = new Date(current);
+                const hh = String(d.getHours()).padStart(2, '0'), mm = String(d.getMinutes()).padStart(2, '0');
+                const dd = String(d.getDate()).padStart(2, '0'), mmm = monthNames[d.getMonth()], yy = String(d.getFullYear()).slice(-2);
+                
+                let baseDateStr = (isEightDaysOrMore && interval !== 'daily') ? `${dd}-${mmm}` : `${dd} ${mmm} ${yy}`;
+                let finalDateStr = (isThirteenDaysOrMore && interval !== 'daily') ? baseDateStr : `<span style="font-weight: 900;"><b>${baseDateStr}</b></span>`;
+
+                if (tickStepMs >= 86400000) { ticktext.push(finalDateStr); } 
+                else { ticktext.push((hh === '00' && mm === '00') ? `00:00<br>${finalDateStr}` : `${hh}:${mm}`); }
+                current += tickStepMs; safety++;
+            }
+            return { tickvals, ticktext };
+        }
+
+        function renderTimeline(bags) {
+            const chartDiv = $id('chart-timeline');
+            const countEl = $id('out-overlap-count');
+            const modalBody = $id('overlap-modal-body');
+            const modalTotal = $id('overlap-modal-total');
+
+            if (bags.length === 0) {
+                try { Plotly.purge(chartDiv); } catch(e) {}
+                $id('out-max-bags').textContent = "0";
+                $id('out-max-time').textContent = "-";
+                countEl.textContent = "0";
+                modalBody.innerHTML = '<tr><td colspan="2" class="py-4 text-center text-gray-400 italic">No flight data available.</td></tr>';
+                modalTotal.textContent = 'Total Bags: 0';
+                return;
+            }
+
+            const interval = $id('slicer-interval').value;
+            const tracesMap = new Map(), globalTimeMap = new Map(), globalFlightBagMap = new Map();
+            let stepMs = 1000; 
+            if (interval === 'daily') stepMs = 86400000;
+            else if (interval === 'hourly') stepMs = 3600000;
+            else if (interval === '15min') stepMs = 900000;
+
+            bags.forEach(bag => {
+                if (!bag.timestamp) return;
+                let binnedTime;
+                if (interval === 'daily') {
+                    const dt = new Date(bag.timestamp); binnedTime = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()).getTime();
+                } else if (interval === 'hourly') {
+                    const dt = new Date(bag.timestamp); binnedTime = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), dt.getHours(), 0, 0).getTime();
+                } else if (interval === '15min') {
+                    const dt = new Date(bag.timestamp); const min = dt.getMinutes(); binnedTime = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), dt.getHours(), min - (min % 15), 0).getTime();
+                } else { binnedTime = bag.timestamp; }
+
+                globalTimeMap.set(binnedTime, (globalTimeMap.get(binnedTime) || 0) + 1);
+
+                if (!globalFlightBagMap.has(binnedTime)) globalFlightBagMap.set(binnedTime, new Map());
+                if (bag.flight && bag.flight !== '-') {
+                    const fbMap = globalFlightBagMap.get(binnedTime);
+                    fbMap.set(bag.flight, (fbMap.get(bag.flight) || 0) + 1);
+                }
+
+                const traceKey = bag.rummageArea && bag.rummageArea !== '-' ? bag.rummageArea : 'UNKNOWN';
+                if (!tracesMap.has(traceKey)) tracesMap.set(traceKey, new Map());
+                const timeMap = tracesMap.get(traceKey);
+                timeMap.set(binnedTime, (timeMap.get(binnedTime) || 0) + 1);
+            });
+
+            let maxBags = 0, peakTime = null;
+            globalTimeMap.forEach((count, time) => { if (count > maxBags) { maxBags = count; peakTime = time; } });
+
+            $id('out-max-bags').textContent = maxBags.toLocaleString();
+            if (peakTime) {
+                const d = new Date(peakTime);
+                const hh = String(d.getHours()).padStart(2, '0'), min = String(d.getMinutes()).padStart(2, '0');
+                const dd = String(d.getDate()).padStart(2, '0'), mm = String(d.getMonth() + 1).padStart(2, '0'), yy = String(d.getFullYear()).slice(-2);
+                $id('out-max-time').textContent = `${dd}/${mm}/${yy} ${hh}:${min}`;
+            } else {
+                $id('out-max-bags').textContent = "0"; $id('out-max-time').textContent = "-";
+            }
+
+            if (peakTime && globalFlightBagMap.has(peakTime)) {
+                const fbMap = globalFlightBagMap.get(peakTime);
+                countEl.textContent = fbMap.size.toLocaleString();
+                let tbodyHtml = '';
+                let modalTotalBags = 0;
+                
+                const sortedFlights = Array.from(fbMap.entries()).sort((a, b) => (b[1] !== a[1]) ? b[1] - a[1] : a[0].localeCompare(b[0]));
+                sortedFlights.forEach(([fl, qty]) => {
+                    tbodyHtml += `<tr class="border-b border-gray-100 hover:bg-gray-50"><td class="py-2 text-sm font-bold text-gray-800">${fl}</td><td class="py-2 text-sm text-right font-mono">${qty}</td></tr>`;
+                    modalTotalBags += qty;
+                });
+                modalBody.innerHTML = tbodyHtml;
+                modalTotal.textContent = `Total Bags: ${modalTotalBags}`;
+            } else {
+                countEl.textContent = "0";
+                modalBody.innerHTML = '<tr><td colspan="2" class="py-4 text-center text-gray-400 italic">No flight data available.</td></tr>';
+                modalTotal.textContent = 'Total Bags: 0';
+            }
+
+            let minTime = Infinity, maxTime = -Infinity;
+            tracesMap.forEach(timeMap => {
+                const times = Array.from(timeMap.keys());
+                if(times.length > 0) {
+                    const traceMin = Math.min(...times), traceMax = Math.max(...times);
+                    if (!timeMap.has(traceMin - stepMs)) timeMap.set(traceMin - stepMs, 0);
+                    if (!timeMap.has(traceMax + stepMs)) timeMap.set(traceMax + stepMs, 0);
+                    minTime = Math.min(minTime, traceMin - stepMs); maxTime = Math.max(maxTime, traceMax + stepMs);
+                }
+            });
+
+            let customTicks = { tickvals: [], ticktext: [] };
+            if (minTime !== Infinity && maxTime !== -Infinity) customTicks = generateCustomTicks(minTime, maxTime, interval);
+
+            const plotlyData = [];
+            const definedOrder = ['MA', 'MB', 'MC1', 'MC2', 'MS1', 'MS2'];
+            const traceKeys = Array.from(tracesMap.keys()).sort((a, b) => {
+                let idxA = definedOrder.indexOf(a), idxB = definedOrder.indexOf(b);
+                if (idxA === -1) idxA = 999; if (idxB === -1) idxB = 999;
+                if (idxA !== idxB) return idxA - idxB;
+                return a.localeCompare(b);
+            });
+
+            traceKeys.forEach(traceKey => {
+                const timeMap = tracesMap.get(traceKey);
+                const xVals = [], yVals = [];
+                Array.from(timeMap.keys()).sort((a, b) => a - b).forEach(t => { xVals.push(new Date(t)); yVals.push(timeMap.get(t)); });
+                const traceColor = areaColorMap.get(traceKey) || '#94a3b8';
+                plotlyData.push({
+                    x: xVals, y: yVals, name: traceKey, type: 'scatter', mode: 'lines', fill: 'tozeroy', opacity: 0.5,    
+                    line: { shape: 'spline', smoothing: 0.4, color: traceColor }, hovertemplate: `<span style="color: #d1d5db;">%{fullData.name}</span>: <b style="color: #ffffff;">%{y}</b><extra></extra>`
+                });
+            });
+
+            const layout = {
+                margin: { t: 40, l: 60, r: 20, b: 40 }, paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff',
+                xaxis: { type: 'date', tickvals: customTicks.tickvals, ticktext: customTicks.ticktext, tickmode: 'array', range: [minTime, maxTime], hoverformat: '%d/%m/%y %H:%M' },
+                yaxis: { title: { text: 'Bags Count', standoff: 30 } }, showlegend: true, hovermode: 'x unified', 
+                hoverlabel: { bgcolor: '#1f2937', bordercolor: '#374151', namelength: -1, align: 'left', font: { color: '#d1d5db', size: 12, family: 'ui-sans-serif, system-ui, sans-serif' } },
+                legend: { orientation: 'h', yanchor: 'bottom', y: 1.05, xanchor: 'left', x: 0 }
+            };
+            Plotly.react(chartDiv, plotlyData, layout, PLOTLY_CONFIG);
+        }
+
+        function renderRummageLoad(bags) {
+            const chartDiv = $id('chart-bar');
+            if (bags.length === 0) { try { Plotly.purge(chartDiv); } catch(e) {} return; }
+
+            const areaCounts = new Map();
+            bags.forEach(bag => {
+                const area = bag.rummageArea && bag.rummageArea !== '-' ? bag.rummageArea : 'UNKNOWN';
+                areaCounts.set(area, (areaCounts.get(area) || 0) + 1);
+            });
+
+            let sortedAreas = Array.from(areaCounts.keys());
+            const sortMethod = $id('rummage-sort').value;
+
+            sortedAreas.sort((a, b) => {
+                if (sortMethod === 'bags-desc') return areaCounts.get(b) - areaCounts.get(a);
+                if (sortMethod === 'bags-asc') return areaCounts.get(a) - areaCounts.get(b);
+                if (sortMethod === 'alpha') return a.localeCompare(b);
+                if (sortMethod === 'area') {
+                    const aIsMTB = a.toUpperCase().includes('MTB') ? 0 : 1, bIsMTB = b.toUpperCase().includes('MTB') ? 0 : 1;
+                    if (aIsMTB !== bIsMTB) return aIsMTB - bIsMTB;
+                    return a.localeCompare(b);
+                }
+                return 0;
+            });
+
+            const xVals = sortedAreas, yVals = sortedAreas.map(a => areaCounts.get(a));
+            const colors = sortedAreas.map(a => areaColorMap.get(a) || '#94a3b8');
+
+            const plotlyData = [{
+                x: xVals, y: yVals, type: 'bar', marker: { color: colors, opacity: 0.5 },
+                text: yVals, textposition: 'outside', textfont: { color: '#4b5563', weight: 'bold' }, cliponaxis: false, hovertemplate: `<span style="color: #d1d5db;">%{x}</span>: <b style="color: #ffffff;">%{y}</b><extra></extra>`
+            }];
+
+            const layout = {
+                margin: { t: 30, l: 60, r: 20, b: 40 }, paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff',
+                xaxis: { title: '', tickangle: 0 }, yaxis: { title: { text: 'Total Bags', standoff: 30 } }, showlegend: false,
+                hoverlabel: { bgcolor: '#1f2937', bordercolor: '#374151', font: { color: '#d1d5db', size: 12, family: 'ui-sans-serif, system-ui, sans-serif' } },
+                // Enable scroll/pan by adding dragmode to the layout
+                dragmode: 'pan'
+            };
+            Plotly.react(chartDiv, plotlyData, layout, PLOTLY_CONFIG);
+        }
+
+        function renderTable(bags) {
+            DOM.reclaimTbody.innerHTML = '';
+            if (bags.length === 0) {
+                DOM.reclaimTbody.innerHTML = `<tr><td colspan="8" class="py-8 text-gray-400 italic text-center">No matching bag records found.</td></tr>`;
+                return;
+            }
+
+            const sortedBags = [...bags].sort((a, b) => a.timestamp - b.timestamp);
+            const displayBags = sortedBags.slice(0, currentTableLimit);
+            
+            const html = displayBags.map(bag => {
+                const hourValue = bag.hourBeforeStdNum;
+                let hourTextColor = 'text-gray-800 font-bold';
+                
+                if (hourValue !== null) {
+                    if (hourValue < 0) hourTextColor = 'text-red-600 font-bold';
+                    else if (hourValue <= 1) hourTextColor = 'text-yellow-600 font-bold';
+                    else hourTextColor = 'text-green-600 font-bold';
+                }
+                
+                const formattedStd = stripSecondsFromDate(bag.std);
+                const formattedHourBeforeStd = formatDecimalToHHmm(bag.hourBeforeStdNum);
+
+                return `<tr class="hover:bg-gray-50 transition-colors">
+                    <td class="font-mono font-semibold text-center" title="${bag.eventTime}">${bag.eventTime}</td>
+                    <td class="font-mono text-center" title="${formattedStd}">${formattedStd}</td>
+                    <td class="font-mono font-bold text-gray-900 text-center" title="${bag.bagTagId}">${bag.bagTagId}</td>
+                    <td class="text-center font-medium text-gray-700" title="${bag.rummage}">${bag.rummage}</td>
+                    <td class="font-semibold text-indigo-600 text-center" title="${bag.rummageArea}">${bag.rummageArea}</td>
+                    <td class="text-center text-gray-600" title="${bag.reason}">${bag.reason}</td>
+                    <td class="font-bold flight-cell cursor-pointer text-blue-600 hover:text-blue-800 text-center" 
+                        data-flight="${bag.flight}" data-std="${bag.std}" data-dispatch="${bag.eventTime}">${bag.flight}</td>
+                    <td class="font-mono ${hourTextColor} text-center" title="${bag.hourBeforeStd}">${formattedHourBeforeStd}</td>
+                </tr>`;
+            });
+            
+            if (sortedBags.length > currentTableLimit) {
+                 html.push(`<tr><td colspan="8" class="py-4 text-center bg-gray-50"><button id="btn-load-more-rows" class="px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 font-bold rounded hover:bg-blue-100 transition text-xs shadow-sm focus:outline-none">Load Next 500 Rows (Showing ${currentTableLimit} of ${sortedBags.length})</button></td></tr>`);
+            }
+            DOM.reclaimTbody.innerHTML = html.join('');
+
+            const loadMoreBtn = $id('btn-load-more-rows');
+            if (loadMoreBtn) {
+                loadMoreBtn.addEventListener('click', () => { currentTableLimit += 500; renderTable(currentFilteredBags); });
+            }
+        }
+
+        function resetFilters() {
+            setDefaultDateFilters();
+            flightSearchInput.value = '';
+            document.querySelectorAll('.flight-item').forEach(item => item.style.display = 'block');
+            filterState = { flight: ['ALL'], reason: ['ALL'], handler: ['ALL'], reclaim: ['ALL'] };
+            updateFlightUI();
+            $id('text-reason').textContent = 'All Reasons';$id('text-reclaim').textContent = 'All Areas';
+            populateFilterDropdowns(); 
+            $id('slicer-search-bag').value = '';$id('slicer-interval').value = 'hourly';
+            triggerFilters();
+        }
+
+        async function parseXLSB(url) {
+            try {
+                let response = await fetch(url);
+                if (!response.ok) {
+                    const fallbackUrl = url.endsWith('.xlsx') ? url.replace('.xlsx', '.xlsb') : url.replace('.xlsb', '.xlsx');
+                    response = await fetch(fallbackUrl); url = fallbackUrl;
+                }
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const arrayBuffer = await response.arrayBuffer();
+                const workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: false, cellNF: false, cellText: false, cellStyles: false, cellFormula: false, sheetStubs: false, dense: true, raw: true });
+                let bestData = [], bestSheetName = "";
+
+                for (let i = 0; i < workbook.SheetNames.length; i++) {
+                    const sheetName = workbook.SheetNames[i];
+                    const worksheet = workbook.Sheets[sheetName];
+                    if (!worksheet) continue;
+                    let cellCount = 0;
+                    if (worksheet['!data']) { worksheet['!data'].forEach(row => { if (row) cellCount += row.length; }); } 
+                    else { cellCount = Object.keys(worksheet).filter(k => k[0] !== '!').length; }
+                    
+                    if (cellCount > 0 && (!worksheet['!ref'] || worksheet['!ref'] === 'A1')) {
+                        let maxRow = worksheet['!data'] ? worksheet['!data'].length : 1000000;
+                        worksheet['!ref'] = `A1:ZZ${maxRow}`;
+                    }
+
+                    const data = XLSX.utils.sheet_to_json(worksheet, { defval: "", raw: true, rawNumbers: true });
+                    if (data.length > bestData.length) { bestData = data; bestSheetName = sheetName; }
+                }
+                return bestData;
+            } catch (err) { console.error(`[ERROR] Failed to process ${url}:`, err); return []; }
+        }
+
+        function getCombinedEventTime(row) {
+            let rawDate = getRawValue(row, ['DATE', 'EVENTDATE']);
+            let rawTime = getRawValue(row, ['TIME']);
+            let rawEventTime = getRawValue(row, ['EVENTTIME']);
+
+            if (rawEventTime !== '-') return formatExcelDate(rawEventTime);
+            else if (rawDate !== '-' && rawTime !== '-') {
+                if (/^\d+(\.\d+)?$/.test(String(rawDate).trim()) && /^\d+(\.\d+)?$/.test(String(rawTime).trim())) {
+                    return formatExcelDate(parseFloat(rawDate) + parseFloat(rawTime));
+                } else { return formatExcelDate(`${rawDate} ${rawTime}`); }
+            } else if (rawDate !== '-') { return formatExcelDate(rawDate); }
+            return '-';
+        }
+
+        function processBagEntities(rows) {
+            bagDataset.clear();
+            rows.forEach((rawRow, index) => {
+                const row = normalizeRowKeys(rawRow);
+                
+                const rawBagTag = getRawValue(row, ['BAGTAGID', 'BAGTAG', 'LICENSEPLATE']);
+                const bagTagId = (rawBagTag !== '-' && rawBagTag !== '') ? String(rawBagTag).trim() : `UNKNOWN_${index + 1}`;
+
+                // 1. Directly target EVENTTIME column for the Timestamp
+                const rawEventTime = getRawValue(row, ['EVENTTIME']);
+                const rawDate = getRawValue(row, ['DATE', 'EVENTDATE']);
+                const rawTime = getRawValue(row, ['TIME']);
+                const rawStd  = getRawValue(row, ['STD', 'STDTIME', 'SCHEDULEDTIME']);
+
+                let combinedEventTime = '-';
+                if (rawEventTime !== '-') {
+                    combinedEventTime = formatExcelDate(rawEventTime);
+                } else if (rawDate !== '-' && rawTime !== '-') {
+                    if (/^\d+(\.\d+)?$/.test(String(rawDate).trim()) && /^\d+(\.\d+)?$/.test(String(rawTime).trim())) {
+                        combinedEventTime = formatExcelDate(parseFloat(rawDate) + parseFloat(rawTime));
+                    } else { combinedEventTime = formatExcelDate(`${rawDate} ${rawTime}`); }
+                } else if (rawDate !== '-') { combinedEventTime = formatExcelDate(rawDate); }
+
+                const parsedDt = parseCustomDateToJS(combinedEventTime);
+                const rawHourStd = String(getRawValue(row, ['HOURBEFORESTD', 'HOURSBEFORESTD'])).trim();
+
+                const bagEntity = {
+                    bagTagId:      bagTagId,
+                    eventTime:     combinedEventTime,
+                    timestamp:     parsedDt ? parsedDt.getTime() : 0, 
+                    dateOnlyISO:   extractISODate(combinedEventTime), 
+                    std:           formatExcelDate(rawStd),
+                    flight:        String(getRawValue(row, ['FLIGHT', 'FLIGHTNO'])).trim(),
+                    
+                    // 2 & 3. Account for stripped underscores (TDPIDCURRNAME and TNONAME)
+                    rummage:       String(getRawValue(row, ['TDPIDCURRNAME', 'MES'])).trim(),
+                    rummageArea:   String(getRawValue(row, ['TNONAME', 'ORIGINPOINT'])).trim(),
+                    
+                    reason:        String(getRawValue(row, ['REASON', 'RUMMAGEREASON'])).trim(),
+                    chute:         String(getRawValue(row, ['CHUTE', 'CHUTEID', 'ASSIGNEDCHUTE'])).trim(),
+                    groundHandler: String(getRawValue(row, ['GROUNDHANDLER', 'HANDLER'])).trim(),
+                    hourBeforeStd: rawHourStd,
+                    hourBeforeStdNum: parseHourString(rawHourStd) 
+                };
+                
+                // Enforce 1 row = 1 unique bag by using a row-specific key
+                bagDataset.set(`ROW_${index}_${bagTagId}`, bagEntity);
+            });
+        }
+
+        async function loadDataFiles() {
+            const overlay = $id('loading-overlay');
+            overlay.classList.remove('hidden');
+            try {
+                // Ensure this points to the exact correct path. If uploading to GitHub, use raw URL if local fails.
+                const mainData = await parseXLSB("./mes_data.xlsb");
+                if (mainData.length === 0) {
+                    alert("Could not load mes_data.xlsb. Please ensure the file exists in the directory.");
+                    overlay.classList.add('hidden'); return;
+                }
+
+                processBagEntities(mainData);
+                
+                setDefaultDateFilters();
+                populateFilterDropdowns();
+                
+                $id('btn-save-as').classList.remove('hidden');
+                $id('kpi-section').classList.remove('hidden');$id('charts-section').classList.remove('hidden');
+                
+                applyFiltersAndRender();
+            } catch (err) {
+                console.error("Data Processing Error:", err);
+                alert("An error occurred while loading the MES data.");
+            } finally { overlay.classList.add('hidden'); }
+        }
+
+        // Keep this active if you want it to automatically load the dataset on startup
+        document.addEventListener('DOMContentLoaded', loadDataFiles);
+    </script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js');
+    });
+  }
+</script>
+</body>
+</html>
