@@ -170,15 +170,9 @@
                 <div id="kpi-bags" class="text-3xl font-bold mt-1">-</div>
             </div>
 
-            <div class="bg-blue-600 text-white p-4 rounded-lg shadow text-center relative group cursor-help transition hover:bg-blue-700">
-                <h4 class="text-xs uppercase opacity-80">Total Flights</h4>
+            <div class="bg-blue-600 text-white p-4 rounded-lg shadow text-center relative transition hover:bg-blue-700">
+                <h4 class="text-xs uppercase opacity-80">Max Origin Point</h4>
                 <div id="kpi-flights" class="text-3xl font-bold mt-1">-</div>
-                <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-3 w-max px-4 py-2.5 bg-gray-800 text-white text-xs rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none text-left border border-gray-700">
-                    <div class="font-bold text-gray-300 border-b border-gray-600 pb-1.5 mb-1.5 uppercase tracking-wide">FLIGHT ASSIGNMENT</div>
-                    <div id="tooltip-flights-mtb" class="mb-1"><span class="text-gray-400">MTB:</span> <span class="font-bold text-green-400 ml-1">0</span></div>
-                    <div id="tooltip-flights-sat"><span class="text-gray-400">SAT:</span> <span class="font-bold text-yellow-400 ml-1">0</span></div>
-                    <div class="absolute top-full left-1/2 transform -translate-x-1/2 -mt-[1px] border-[6px] border-transparent border-t-gray-800"></div>
-                </div>
             </div>
 
             <!-- MODIFIED AVG BAGS KPI CARD -->
@@ -196,14 +190,9 @@
                 </div>
             </div>
 
-            <div class="bg-teal-600 text-white p-4 rounded-lg shadow text-center relative group cursor-help transition hover:bg-teal-700">
-                <h4 class="text-xs uppercase opacity-80">Avg Time Before STD (HH:mm)</h4>
+            <div class="bg-teal-600 text-white p-4 rounded-lg shadow text-center relative transition hover:bg-teal-700">
+                <h4 class="text-xs uppercase opacity-80">Max MES</h4>
                 <div id="kpi-avg-time-std" class="text-3xl font-bold mt-1">-</div>
-                <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-3 w-max px-4 py-2.5 bg-gray-800 text-white text-xs rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none text-center border border-gray-700">
-                    <div class="font-bold text-gray-300 uppercase tracking-wide">Calculated As</div>
-                    <div class="text-gray-400 mt-1">Average of (STD - Time dispatch at MES)</div>
-                    <div class="absolute top-full left-1/2 transform -translate-x-1/2 -mt-[1px] border-[6px] border-transparent border-t-gray-800"></div>
-                </div>
             </div>
             
             <div class="bg-gray-800 text-white p-3 rounded-lg shadow text-center relative group cursor-help transition hover:bg-gray-900 flex flex-col justify-center">
@@ -437,7 +426,7 @@
                 <!-- 5. OVERALL RUMMAGE DURATION DISTRIBUTION -->
                 <div class="bg-white p-4 rounded-lg shadow flex flex-col relative h-[390px]">
                     <div class="flex justify-between items-center border-b pb-2 mb-2 shrink-0">
-                        <h3 class="font-bold text-gray-700">5. Overall MES Duration Distribution</h3>
+                        <h3 class="font-bold text-gray-700">5. MES Load Distribution</h3>
                         <button class="export-chart-btn flex items-center gap-1 text-[0.65rem] font-bold text-gray-500 hover:text-blue-600 transition bg-gray-100 px-2 py-1 rounded border border-gray-200" data-target="chart-histogram" title="Save Chart as JPEG">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                             JPEG
@@ -1880,37 +1869,53 @@
             const chartDiv = $id('chart-histogram');
             if (bags.length === 0) { try { Plotly.purge(chartDiv); } catch(e) {} return; }
 
-            const durations = bags.map(b => b.hourBeforeStdNum).filter(val => val !== null && !isNaN(val));
-            if (durations.length === 0) { try { Plotly.purge(chartDiv); } catch(e) {} return; }
+            const mesCounts = new Map();
+            bags.forEach(bag => {
+                const mes = bag.rummage && bag.rummage !== '-' ? bag.rummage : 'UNKNOWN';
+                mesCounts.set(mes, (mesCounts.get(mes) || 0) + 1);
+            });
 
-            const trace = {
-                x: durations, type: 'histogram',
-                marker: { color: 'rgba(99, 102, 241, 0.7)', line: { color: 'rgba(79, 70, 229, 1)', width: 1.5 } },
-                hovertemplate: `<span style="color: #d1d5db;">Time Before STD:</span> <b style="color: #ffffff;">%{x} hrs</b><br><span style="color: #d1d5db;">Bags Processed:</span> <b style="color: #ffffff;">%{y}</b><extra></extra>`
-            };
+            let sortedMes = Array.from(mesCounts.keys());
+            sortedMes.sort((a, b) => mesCounts.get(b) - mesCounts.get(a));
+
+            const xVals = sortedMes, yVals = sortedMes.map(m => mesCounts.get(m));
+            const colors = sortedMes.map((a, i) => areaColorPalette[i % areaColorPalette.length] || '#94a3b8');
+
+            const plotlyData = [{
+                x: xVals, y: yVals, type: 'bar', marker: { color: colors, opacity: 0.5 },
+                text: yVals, textposition: 'outside', textfont: { color: '#4b5563', weight: 'bold' }, cliponaxis: false, hovertemplate: `<span style="color: #d1d5db;">%{x}</span>: <b style="color: #ffffff;">%{y}</b><extra></extra>`
+            }];
+
             const layout = {
                 margin: { t: 30, l: 60, r: 20, b: 40 }, paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff',
-                xaxis: { title: 'Hours Before STD', zeroline: false, tickfont: { color: '#4b5563' } },
-                yaxis: { title: { text: 'Number of Bags', standoff: 30 }, zeroline: false, tickfont: { color: '#4b5563' } },
-                hoverlabel: { bgcolor: '#1f2937', bordercolor: '#374151', font: { color: '#d1d5db', size: 12, family: 'ui-sans-serif, system-ui, sans-serif' } }
+                xaxis: { title: '', tickangle: 0 }, yaxis: { title: { text: 'Total Bags', standoff: 30 } }, showlegend: false,
+                hoverlabel: { bgcolor: '#1f2937', bordercolor: '#374151', font: { color: '#d1d5db', size: 12, family: 'ui-sans-serif, system-ui, sans-serif' } },
+                dragmode: 'pan'
             };
-            Plotly.react(chartDiv, [trace], layout, PLOTLY_CONFIG);
+            
+            Plotly.react(chartDiv, plotlyData, layout, PLOTLY_CONFIG);
         }
 
         function renderKPIs(bags) {
             const totalBags = bags.length;
-            const uniqueFlightsList = bags.map(b => b.flight).filter(f => f && f !== '-');
-            const totalFlights = new Set(uniqueFlightsList).size;
             
-            const mtbFlightsCount = new Set(bags.filter(b => { const c = (b.chute || '').toUpperCase(); return c.startsWith('MA') || c.startsWith('MB'); }).map(b => b.flight)).size;
-            const satFlightsCount = new Set(bags.filter(b => { const c = (b.chute || '').toUpperCase(); return c.startsWith('MC1') || c.startsWith('MC2'); }).map(b => b.flight)).size;
-
+            const areaMap = new Map();
+            const mesMap = new Map();
+            const globalTimeMap = new Map();
             const intervalSelect = $id('slicer-interval');
             const interval = intervalSelect.value;
             const intervalText = intervalSelect.options[intervalSelect.selectedIndex].text;
-            const globalTimeMap = new Map();
+
+            let maxVal = -Infinity, minVal = Infinity, sum = 0, validCount = 0;
+            let minBag = null, maxBagForMinMax = null;
 
             bags.forEach(bag => {
+                const area = bag.rummageArea && bag.rummageArea !== '-' ? bag.rummageArea : 'UNKNOWN';
+                areaMap.set(area, (areaMap.get(area) || 0) + 1);
+
+                const mes = bag.rummage && bag.rummage !== '-' ? bag.rummage : 'UNKNOWN';
+                mesMap.set(mes, (mesMap.get(mes) || 0) + 1);
+
                 if (!bag.timestamp) return;
                 let binnedTime;
                 if (interval === 'daily') {
@@ -1921,6 +1926,22 @@
                     const dt = new Date(bag.timestamp); const min = dt.getMinutes(); binnedTime = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), dt.getHours(), min - (min % 15), 0).getTime();
                 } else { binnedTime = bag.timestamp; }
                 globalTimeMap.set(binnedTime, (globalTimeMap.get(binnedTime) || 0) + 1);
+
+                if (bag.hourBeforeStdNum !== null) {
+                    sum += bag.hourBeforeStdNum; validCount++;
+                    if (bag.hourBeforeStdNum > maxVal) { maxVal = bag.hourBeforeStdNum; maxBagForMinMax = bag; }
+                    if (bag.hourBeforeStdNum < minVal) { minVal = bag.hourBeforeStdNum; minBag = bag; }
+                }
+            });
+
+            let maxArea = '-', maxAreaCount = 0;
+            areaMap.forEach((count, area) => {
+                if (count > maxAreaCount) { maxAreaCount = count; maxArea = area; }
+            });
+
+            let maxMes = '-', maxMesCount = 0;
+            mesMap.forEach((count, mes) => {
+                if (count > maxMesCount) { maxMesCount = count; maxMes = mes; }
             });
 
             let maxBagsInterval = 0, maxBagsTime = null, totalBagsInIntervals = 0;
@@ -1928,22 +1949,11 @@
                 totalBagsInIntervals += count;
                 if (count > maxBagsInterval) { maxBagsInterval = count; maxBagsTime = time; }
             });
-
             const intervalCount = globalTimeMap.size;
             const avgBagsInterval = intervalCount > 0 ? Math.round(totalBagsInIntervals / intervalCount) : 0;
 
             let avgHourStd = '-', maxHourStdRaw = '-', minHourStdRaw = '-';
             let maxColorClass = 'text-gray-500', minColorClass = 'text-gray-500';
-            let minBag = null, maxBagForMinMax = null;
-            let maxVal = -Infinity, minVal = Infinity, sum = 0, validCount = 0;
-
-            bags.forEach(b => {
-                if (b.hourBeforeStdNum !== null) {
-                    sum += b.hourBeforeStdNum; validCount++;
-                    if (b.hourBeforeStdNum > maxVal) { maxVal = b.hourBeforeStdNum; maxBagForMinMax = b; }
-                    if (b.hourBeforeStdNum < minVal) { minVal = b.hourBeforeStdNum; minBag = b; }
-                }
-            });
 
             if (validCount > 0) {
                 let avgNum = sum / validCount;
@@ -1954,10 +1964,8 @@
             }
 
             DOM.kpiBags.textContent = totalBags.toLocaleString();
-            DOM.kpiFlights.textContent = totalFlights.toLocaleString();
-            
-            if($id('tooltip-flights-mtb')) $id('tooltip-flights-mtb').innerHTML = `<span class="text-gray-400">MTB:</span> <span class="font-bold text-green-400 ml-1">${mtbFlightsCount}</span>`;
-            if($id('tooltip-flights-sat')) $id('tooltip-flights-sat').innerHTML = `<span class="text-gray-400">SAT:</span> <span class="font-bold text-yellow-400 ml-1">${satFlightsCount}</span>`;
+            DOM.kpiFlights.textContent = maxArea; 
+            $id('kpi-avg-time-std').textContent = maxMes;
 
             $id('kpi-avg-bags-label').textContent = `Total Bags (${intervalText})`;
             $id('kpi-avg-bags').textContent = avgBagsInterval.toLocaleString();
@@ -1978,7 +1986,6 @@
                 `;
             } else if (tooltipBoxInterval) { tooltipBoxInterval.innerHTML = ''; }
 
-            $id('kpi-avg-time-std').textContent = avgHourStd;
             const kpiMaxEl = $id('kpi-max-time-std');
             kpiMaxEl.textContent = maxHourStdRaw; kpiMaxEl.className = `text-xl ${maxColorClass}`;
             const kpiMinEl = $id('kpi-min-time-std');
@@ -2270,10 +2277,19 @@
                 const dd = String(d.getDate()).padStart(2, '0'), mmm = monthNames[d.getMonth()], yy = String(d.getFullYear()).slice(-2);
                 
                 let baseDateStr = (isEightDaysOrMore && interval !== 'daily') ? `${dd}-${mmm}` : `${dd} ${mmm} ${yy}`;
-                let finalDateStr = (isThirteenDaysOrMore && interval !== 'daily') ? baseDateStr : `<span style="font-weight: 900;"><b>${baseDateStr}</b></span>`;
+                
+                let finalDateStr = baseDateStr; 
 
                 if (tickStepMs >= 86400000) { ticktext.push(finalDateStr); } 
-                else { ticktext.push((hh === '00' && mm === '00') ? `00:00<br>${finalDateStr}` : `${hh}:${mm}`); }
+                else { 
+                    if (hh === '12' && mm === '00') {
+                        ticktext.push(`12:00<br>${finalDateStr}`);
+                    } else if (hh === '00' && mm === '00') {
+                        ticktext.push(`00:00`);
+                    } else {
+                        ticktext.push(`${hh}:${mm}`);
+                    }
+                }
                 current += tickStepMs; safety++;
             }
             return { tickvals, ticktext };
@@ -2396,7 +2412,7 @@
             const layout = {
                 margin: { t: 40, l: 60, r: 20, b: 40 }, paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff',
                 xaxis: { type: 'date', tickvals: customTicks.tickvals, ticktext: customTicks.ticktext, tickmode: 'array', range: [minTime, maxTime], hoverformat: '%d/%m/%y %H:%M' },
-                yaxis: { title: { text: 'Bags Count', standoff: 30 } }, showlegend: true, hovermode: 'x unified', 
+                yaxis: { title: { text: 'Total Bags', standoff: 30 } }, showlegend: true, hovermode: 'x unified', 
                 hoverlabel: { bgcolor: '#1f2937', bordercolor: '#374151', namelength: -1, align: 'left', font: { color: '#d1d5db', size: 12, family: 'ui-sans-serif, system-ui, sans-serif' } },
                 legend: { orientation: 'h', yanchor: 'bottom', y: 1.05, xanchor: 'left', x: 0 }
             };
