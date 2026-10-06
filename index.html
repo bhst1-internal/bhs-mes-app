@@ -170,9 +170,13 @@
                 <div id="kpi-bags" class="text-3xl font-bold mt-1">-</div>
             </div>
 
-            <div class="bg-blue-600 text-white p-4 rounded-lg shadow text-center relative transition hover:bg-blue-700">
+            <!-- MODIFIED MAX ORIGIN POINT KPI CARD -->
+            <div class="bg-blue-600 text-white p-4 rounded-lg shadow text-center relative group cursor-help transition hover:bg-blue-700">
                 <h4 class="text-xs uppercase opacity-80">Max Origin Point</h4>
                 <div id="kpi-flights" class="text-3xl font-bold mt-1">-</div>
+                <div id="tooltip-max-origin" class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-3 w-max px-4 py-2.5 bg-gray-800 text-white text-xs rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none text-left border border-gray-700">
+                    <!-- Dynamic Content in JS -->
+                </div>
             </div>
 
             <!-- MODIFIED AVG BAGS KPI CARD -->
@@ -190,9 +194,13 @@
                 </div>
             </div>
 
-            <div class="bg-teal-600 text-white p-4 rounded-lg shadow text-center relative transition hover:bg-teal-700">
+            <!-- MODIFIED MAX MES KPI CARD -->
+            <div class="bg-teal-600 text-white p-4 rounded-lg shadow text-center relative group cursor-help transition hover:bg-teal-700">
                 <h4 class="text-xs uppercase opacity-80">Max MES</h4>
                 <div id="kpi-avg-time-std" class="text-3xl font-bold mt-1">-</div>
+                <div id="tooltip-max-mes" class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-3 w-max px-4 py-2.5 bg-gray-800 text-white text-xs rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none text-left border border-gray-700">
+                    <!-- Dynamic Content in JS -->
+                </div>
             </div>
             
             <div class="bg-gray-800 text-white p-3 rounded-lg shadow text-center relative group cursor-help transition hover:bg-gray-900 flex flex-col justify-center">
@@ -719,7 +727,6 @@
             simSummaryTbody: $id('sim-summary-tbody')
         };
 
-        // Replaced "handler" with "mes" in filter state
         let filterState = { flight: ['ALL'], reason: ['ALL'], mes: ['ALL'], reclaim: ['ALL'] };
 
         const SHIFTED_FLIGHTS_LIST = [
@@ -1714,25 +1721,29 @@
             }
         }
 
-        function populateMultiSelect(menuId, textId, optionsArray, defaultText, stateArray, isBlue = false) {
+        function populateMultiSelect(menuId, textId, optionsArray, defaultText, filterKey, isBlue = false) {
             const menu = $id(menuId);
             const html = [];
-            html.push(`<label class="flex items-center p-2 hover:bg-gray-50 cursor-pointer text-sm font-semibold border-b text-blue-600"><input type="checkbox" value="ALL" class="mr-2 rounded" ${stateArray.includes('ALL') ? 'checked' : ''}> <span class="truncate">${defaultText}</span></label>`);
+            
+            html.push(`<label class="flex items-center p-2 hover:bg-gray-50 cursor-pointer text-sm font-semibold border-b text-blue-600"><input type="checkbox" value="ALL" class="mr-2 rounded" ${filterState[filterKey].includes('ALL') ? 'checked' : ''}> <span class="truncate">${defaultText}</span></label>`);
             
             optionsArray.forEach(opt => {
-                html.push(`<label class="flex items-center p-2 hover:bg-gray-50 cursor-pointer text-sm border-b border-gray-50 ${isBlue ? 'font-semibold text-blue-700' : 'text-gray-700'}"><input type="checkbox" value="${opt}" class="mr-2 rounded" ${stateArray.includes(opt) ? 'checked' : ''}> <span class="truncate">${opt}</span></label>`);
+                html.push(`<label class="flex items-center p-2 hover:bg-gray-50 cursor-pointer text-sm border-b border-gray-50 ${isBlue ? 'font-semibold text-blue-700' : 'text-gray-700'}"><input type="checkbox" value="${opt}" class="mr-2 rounded" ${filterState[filterKey].includes(opt) ? 'checked' : ''}> <span class="truncate">${opt}</span></label>`);
             });
             menu.innerHTML = html.join('');
 
             const checkboxes = menu.querySelectorAll('input[type="checkbox"]');
             checkboxes.forEach(cb => {
                 cb.addEventListener('change', (e) => {
+                    let stateArray = filterState[filterKey]; 
                     const val = e.target.value;
                     if (val === 'ALL') {
                         if (e.target.checked) {
                             stateArray.length = 0; stateArray.push('ALL');
                             checkboxes.forEach(c => c.checked = (c.value === 'ALL'));
-                        } else { stateArray.length = 0; }
+                        } else { 
+                            e.target.checked = true; // Prevent unchecking if nothing else is clicked
+                        }
                     } else {
                         const allCb = menu.querySelector('input[value="ALL"]');
                         if (allCb.checked) { allCb.checked = false; stateArray.length = 0; }
@@ -1777,11 +1788,10 @@
                 cb.addEventListener('change', (e) => handleFlightSelection(e.target.value, e.target.checked));
             });
 
-            populateMultiSelect('menu-reason', 'text-reason', Array.from(reasons).sort(), 'All Reasons', filterState.reason);
-            populateMultiSelect('menu-mes', 'text-mes', Array.from(mesSet).sort(), 'All MES', filterState.mes, true);
-            populateMultiSelect('menu-reclaim', 'text-reclaim', Array.from(reclaims).sort(), 'All Areas', filterState.reclaim, true);
+            populateMultiSelect('menu-reason', 'text-reason', Array.from(reasons).sort(), 'All Reasons', 'reason');
+            populateMultiSelect('menu-mes', 'text-mes', Array.from(mesSet).sort(), 'All MES', 'mes', true);
+            populateMultiSelect('menu-reclaim', 'text-reclaim', Array.from(reclaims).sort(), 'All Areas', 'reclaim', true);
 
-            // --- ADDED PRESET LOGIC ---
             const reclaimMenu = $id('menu-reclaim');
             const presetsHtml = `
                 <div class="border-b border-gray-200 bg-white flex flex-col p-1.5 gap-1.5 sticky top-0 z-20 shadow-sm">
@@ -1806,7 +1816,8 @@
             $id('preset-all-ch').addEventListener('click', (e) => {
                 e.stopPropagation();
                 const chOptions = Array.from(reclaims).filter(r => r.startsWith('CH'));
-                filterState.reclaim = chOptions.length > 0 ? chOptions : ['ALL'];
+                filterState.reclaim.length = 0; 
+                if (chOptions.length > 0) filterState.reclaim.push(...chOptions); else filterState.reclaim.push('ALL');
                 updateReclaimCheckboxes();
                 triggerFilters();
             });
@@ -1814,11 +1825,11 @@
             $id('preset-all-transfer').addEventListener('click', (e) => {
                 e.stopPropagation();
                 const transferOptions = Array.from(reclaims).filter(r => r.startsWith('BT') || r.startsWith('BM'));
-                filterState.reclaim = transferOptions.length > 0 ? transferOptions : ['ALL'];
+                filterState.reclaim.length = 0;
+                if (transferOptions.length > 0) filterState.reclaim.push(...transferOptions); else filterState.reclaim.push('ALL');
                 updateReclaimCheckboxes();
                 triggerFilters();
             });
-            // --- END PRESET LOGIC ---
         }
 
         function applyFiltersAndRender() {
@@ -1980,6 +1991,28 @@
             DOM.kpiBags.textContent = totalBags.toLocaleString();
             DOM.kpiFlights.textContent = maxArea; 
             $id('kpi-avg-time-std').textContent = maxMes;
+
+            const tooltipMaxOrigin = $id('tooltip-max-origin');
+            if (tooltipMaxOrigin) {
+                if (maxAreaCount > 0) {
+                    tooltipMaxOrigin.innerHTML = `
+                        <div class="font-bold text-gray-300 border-b border-gray-600 pb-1.5 mb-1.5 uppercase tracking-wide">Origin Point Details</div>
+                        <div class="mb-1"><span class="text-gray-400">Total Bags:</span> <span class="font-bold text-blue-400 ml-1">${maxAreaCount.toLocaleString()}</span></div>
+                        <div class="absolute top-full left-1/2 transform -translate-x-1/2 -mt-[1px] border-[6px] border-transparent border-t-gray-800"></div>
+                    `;
+                } else { tooltipMaxOrigin.innerHTML = ''; }
+            }
+
+            const tooltipMaxMes = $id('tooltip-max-mes');
+            if (tooltipMaxMes) {
+                if (maxMesCount > 0) {
+                    tooltipMaxMes.innerHTML = `
+                        <div class="font-bold text-gray-300 border-b border-gray-600 pb-1.5 mb-1.5 uppercase tracking-wide">MES Details</div>
+                        <div class="mb-1"><span class="text-gray-400">Total Bags:</span> <span class="font-bold text-teal-400 ml-1">${maxMesCount.toLocaleString()}</span></div>
+                        <div class="absolute top-full left-1/2 transform -translate-x-1/2 -mt-[1px] border-[6px] border-transparent border-t-gray-800"></div>
+                    `;
+                } else { tooltipMaxMes.innerHTML = ''; }
+            }
 
             $id('kpi-avg-bags-label').textContent = `Total Bags (${intervalText})`;
             $id('kpi-avg-bags').textContent = avgBagsInterval.toLocaleString();
@@ -2399,7 +2432,6 @@
             });
 
             if (minTime !== Infinity && maxTime !== -Infinity) {
-                // Pad by one step to let the chart drop to zero on edges if necessary
                 minTime -= stepMs;
                 maxTime += stepMs;
             }
@@ -2407,7 +2439,6 @@
             let customTicks = { tickvals: [], ticktext: [] };
             if (minTime !== Infinity && maxTime !== -Infinity) customTicks = generateCustomTicks(minTime, maxTime, interval);
 
-            // Generate an exact bin block layout mapping to inject natural 0s for missing datasets 
             const allBins = [];
             if (minTime !== Infinity && maxTime !== -Infinity) {
                 let curr = minTime;
@@ -2429,7 +2460,7 @@
             traceKeys.forEach(traceKey => {
                 const timeMap = tracesMap.get(traceKey);
                 const xVals = [], yVals = [];
-                // Force plotting exactly to the complete bins layout to capture drops to exactly 0
+                
                 allBins.forEach(t => { 
                     xVals.push(new Date(t)); 
                     yVals.push(timeMap.has(t) ? timeMap.get(t) : 0); 
@@ -2442,7 +2473,6 @@
                 });
             });
 
-            // Calculate vertical timeline dividing lines at precisely midnight bounds where multi-dates apply
             const shapes = [];
             if (minTime !== Infinity && maxTime !== -Infinity && interval !== 'daily') {
                 let currentDay = new Date(minTime);
@@ -2568,7 +2598,10 @@
             setDefaultDateFilters();
             flightSearchInput.value = '';
             document.querySelectorAll('.flight-item').forEach(item => item.style.display = 'block');
-            filterState = { flight: ['ALL'], reason: ['ALL'], mes: ['ALL'], reclaim: ['ALL'] };
+            filterState.flight = ['ALL'];
+            filterState.reason = ['ALL'];
+            filterState.mes = ['ALL'];
+            filterState.reclaim = ['ALL'];
             updateFlightUI();
             $id('text-reason').textContent = 'All Reasons';
             $id('text-mes').textContent = 'All MES';$id('text-reclaim').textContent = 'All Areas';
