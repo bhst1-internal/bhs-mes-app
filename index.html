@@ -1452,8 +1452,8 @@
                 const fullOrig = originCell.getAttribute('data-full-origin');
                 
                 tableTooltipContent.innerHTML = `
-                    <div class="font-bold text-gray-300 border-b border-gray-600 pb-1.5 mb-1.5 uppercase tracking-wide">Origin Point Details</div>
-                    <div><span class="text-gray-400">Full Origin:</span> <span class="font-bold text-white ml-1">${fullOrig}</span></div>
+                    <div class="font-bold text-gray-300 border-b border-gray-600 pb-1.5 mb-1.5 uppercase tracking-wide">Origin Point Details: <span class="text-blue-400">${fullOrig}</span></div>
+                    <div><span class="text-gray-400">Full Name:</span> <span class="font-bold text-white ml-1">${fullOrig}</span></div>
                 `;
                 tableCustomTooltip.classList.remove('invisible', 'opacity-0');
                 tableCustomTooltip.classList.add('opacity-100', 'visible');
@@ -1707,80 +1707,6 @@
                 return `${yy}-${parts[1]}-${parts[0]}`;
             }
             return '';
-        }
-
-        function processBagEntities(rows) {
-            bagDataset.clear();
-
-            // DEBUGGING: Log the exact headers found in the Excel file to the browser console
-            if (rows.length > 0) {
-                console.log("Excel Headers Detected by Dashboard:", Object.keys(rows[0]));
-            }
-
-            rows.forEach((rawRow, index) => {
-                const row = normalizeRowKeys(rawRow);
-                
-                const rawBagTag = getRawValue(row, ['BAGTAGID', 'BAGTAG', 'LICENSEPLATE']);
-                const bagTagId = (rawBagTag !== '-' && rawBagTag !== '') ? String(rawBagTag).trim() : `UNKNOWN_${index + 1}`;
-
-                const rawEventTime = getRawValue(row, ['EVENTTIME', 'EVENT_TIME']);
-                const rawDate = getRawValue(row, ['DATE', 'EVENTDATE']);
-                const rawTime = getRawValue(row, ['TIME']);
-                const rawStd  = getRawValue(row, ['STD', 'STDTIME', 'SCHEDULEDTIME']);
-
-                let combinedEventTime = '-';
-                if (rawEventTime !== '-') {
-                    combinedEventTime = formatExcelDate(rawEventTime);
-                } else if (rawDate !== '-' && rawTime !== '-') {
-                    if (/^\d+(\.\d+)?$/.test(String(rawDate).trim()) && /^\d+(\.\d+)?$/.test(String(rawTime).trim())) {
-                        combinedEventTime = formatExcelDate(parseFloat(rawDate) + parseFloat(rawTime));
-                    } else { combinedEventTime = formatExcelDate(`${rawDate} ${rawTime}`); }
-                } else if (rawDate !== '-') { combinedEventTime = formatExcelDate(rawDate); }
-
-                const parsedDt = parseCustomDateToJS(combinedEventTime);
-                const rawHourStd = String(getRawValue(row, ['HOURBEFORESTD', 'HOURSBEFORESTD'])).trim();
-
-                // 1. First try normal targeted matching
-                let rawMes = getRawValue(row, ['TDPIDCURRNAME', 'TDP', 'IDCURRNAME', 'MES']);
-                let rawOrigin = getRawValue(row, ['TNONAME', 'TNO', 'TERMINALNODENAME', 'ORIGINPOINT']);
-
-                // 2. FUZZY MATCHING FALLBACK: If standard lookup fails, aggressively scan original headers
-                if (rawMes === '-' && rawRow) {
-                    const fallbackMesKey = Object.keys(rawRow).find(k => k.replace(/[^A-Z0-9]/gi, '').toUpperCase().includes('TDP'));
-                    if (fallbackMesKey) rawMes = rawRow[fallbackMesKey];
-                }
-                if (rawOrigin === '-' && rawRow) {
-                    const fallbackOriginKey = Object.keys(rawRow).find(k => k.replace(/[^A-Z0-9]/gi, '').toUpperCase().includes('TNO'));
-                    if (fallbackOriginKey) rawOrigin = rawRow[fallbackOriginKey];
-                }
-                
-                rawMes = String(rawMes).trim();
-                rawOrigin = String(rawOrigin).trim();
-
-                const bagEntity = {
-                    bagTagId:      bagTagId,
-                    eventTime:     combinedEventTime,
-                    timestamp:     parsedDt ? parsedDt.getTime() : 0, 
-                    dateOnlyISO:   extractISODate(combinedEventTime), 
-                    std:           formatExcelDate(rawStd),
-                    flight:        String(getRawValue(row, ['FLIGHT', 'FLIGHTNO'])).trim(),
-                    
-                    fullMes:       rawMes,
-                    rummage:       rawMes !== '-' ? rawMes.replace(/^MES\s*/i, '') : '-',         
-                    
-                    fullOrigin:    rawOrigin,
-                    rummageArea:   rawOrigin !== '-' ? rawOrigin.split('-')[0] : '-',      
-                    
-                    reason:        String(getRawValue(row, ['REASON', 'RUMMAGEREASON'])).trim(),
-                    chute:         String(getRawValue(row, ['CHUTE', 'CHUTEID', 'ASSIGNEDCHUTE'])).trim(),
-                    groundHandler: String(getRawValue(row, ['GROUNDHANDLER', 'HANDLER'])).trim(),
-                    hourBeforeStd: rawHourStd,
-                    hourBeforeStdNum: parseHourString(rawHourStd) 
-                };
-                
-                // Enforce 1 row = 1 unique bag by using a row-specific key
-                bagDataset.set(`ROW_${index}_${bagTagId}`, bagEntity);
-            });
         }
 
         function setDefaultDateFilters() {
@@ -2612,6 +2538,7 @@
 
                 const parsedDt = parseCustomDateToJS(combinedEventTime);
                 const rawHourStd = String(getRawValue(row, ['HOURBEFORESTD', 'HOURSBEFORESTD'])).trim();
+                const rawOrigin = String(getRawValue(row, ['TNONAME', 'ORIGINPOINT'])).trim(); // <-- ADDED
 
                 const bagEntity = {
                     bagTagId:      bagTagId,
@@ -2623,7 +2550,8 @@
                     
                     // 2 & 3. Account for stripped underscores (TDPIDCURRNAME and TNONAME)
                     rummage:       String(getRawValue(row, ['TDPIDCURRNAME', 'MES'])).trim(),
-                    rummageArea:   String(getRawValue(row, ['TNONAME', 'ORIGINPOINT'])).trim(),
+                    fullOrigin:    rawOrigin, // <-- ADDED
+                    rummageArea:   rawOrigin !== '-' ? rawOrigin.split('-')[0] : '-', // <-- UPDATED
                     
                     reason:        String(getRawValue(row, ['REASON', 'RUMMAGEREASON'])).trim(),
                     chute:         String(getRawValue(row, ['CHUTE', 'CHUTEID', 'ASSIGNEDCHUTE'])).trim(),
